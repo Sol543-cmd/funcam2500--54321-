@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#000000">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="referrer" content="no-referrer">
+<meta name="robots" content="noindex, nofollow">
+<title>FunCam</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<main id="camScreen" class="screen">
+  <div id="stage"><canvas id="out"></canvas></div>
+  <video id="cam" playsinline muted autoplay></video>
+  <div id="flash"></div>
+  <div id="hint" hidden></div>
+  <div id="loading"><div class="spinner"></div><div id="loadingText">Starting camera…</div><button id="btnRetry" class="primary" hidden>Try again</button></div>
+
+  <div id="recBadge" hidden><i></i><span id="recTime">0:00</span></div>
+
+  <div class="topbar">
+    <button id="btnSettings" class="round" aria-label="Settings">⚙️</button>
+    <button id="btnCombos" class="pill">✨ Combos</button>
+    <button id="btnFlip" class="round" aria-label="Flip camera">🔄</button>
+  </div>
+
+  <div class="bottom">
+    <div id="filterRow" class="carousel"></div>
+    <div id="modeRow" class="modes">
+      <button data-mode="photo">PHOTO</button>
+      <button data-mode="video">VIDEO</button>
+    </div>
+    <div class="controls">
+      <button id="btnLib" class="libBtn" aria-label="My photos and videos"></button>
+      <button id="btnShutter" aria-label="Capture"><span></span></button>
+      <button id="btnVoice" class="voiceBtn" aria-label="Choose voice"><span id="voiceEmoji">🙂</span><small>Voice</small></button>
+    </div>
+  </div>
+</main>
+
+<section id="lib" class="screen overlay" hidden>
+  <div class="head">
+    <button class="round" id="libBack" aria-label="Back">←</button>
+    <h2>My stuff</h2>
+    <span id="libCount" class="muted"></span>
+  </div>
+  <div id="grid" class="grid"></div>
+  <p id="libEmpty" class="empty" hidden>Nothing here yet.<br>Take a photo or video!</p>
+</section>
+
+<section id="viewer" class="screen overlay" hidden>
+  <div class="head">
+    <button class="round" id="vClose" aria-label="Close">✕</button>
+    <h2 id="vTitle"></h2>
+  </div>
+  <div class="vMedia">
+    <video id="vVideo" playsinline controls loop></video>
+    <img id="vImg" alt="">
+    <div id="vProgress" hidden>
+      <div class="bar"><i></i></div>
+      <span>Applying voice…</span>
+    </div>
+  </div>
+  <div id="vVoice" class="vVoice">
+    <div class="label">Voice — tap one to hear it on your video</div>
+    <div id="vChips" class="chips"></div>
+    <button id="vApply" class="primary" hidden>Apply this voice</button>
+    <div id="vNote" class="note"></div>
+  </div>
+  <div class="vActions">
+    <button id="vShare" class="action"><b>📤</b><span>Share</span></button>
+    <button id="vSave" class="action"><b>⬇️</b><span>Save to phone</span></button>
+    <button id="vDelete" class="action danger"><b>🗑️</b><span>Delete</span></button>
+  </div>
+</section>
+
+<section id="settings" class="screen overlay" hidden>
+  <div class="head">
+    <button class="round" id="setBack" aria-label="Back">←</button>
+    <h2>Settings</h2>
+  </div>
+  <div class="settingsBody">
+    <label class="row">
+      <span><b>Also save to my phone</b><small>Copies every new photo/video to your Downloads folder so it shows up in your gallery.</small></span>
+      <input type="checkbox" id="setAutoSave">
+    </label>
+
+    <div class="row col">
+      <span><b>Microphone (for videos)</b><small>Pick the phone's own mic if your car's Bluetooth switches to call-quality sound while recording.</small></span>
+      <select id="setMic"></select>
+    </div>
+
+    <label class="row">
+      <span><b>Noise &amp; echo cleanup</b><small>Off is best when your car is playing music over Bluetooth — it stops Android from switching the Bluetooth audio mode.</small></span>
+      <input type="checkbox" id="setCleanup">
+    </label>
+
+    <div class="row col">
+      <span><b>App lock</b><small id="pinState"></small></span>
+      <div class="btnrow">
+        <button id="pinSet" class="primary small">Set PIN</button>
+        <button id="pinRemove" class="small">Remove PIN</button>
+      </div>
+    </div>
+
+    <div class="row col">
+      <span><b>Storage</b><small id="storageInfo">…</small></span>
+      <div class="btnrow">
+        <button id="btnInstall" class="primary small" hidden>Install app</button>
+        <button id="btnWipe" class="small danger">Delete everything</button>
+      </div>
+    </div>
+
+    <p class="fine">Private by design: this app has no account, no server and no analytics. Photos and videos are kept only in this app's storage on your phone (plus your Downloads folder if you leave the first option on).</p>
+  </div>
+</section>
+
+<div id="sheet" class="sheet" hidden>
+  <div class="sheetBack"></div>
+  <div class="sheetBody">
+    <div class="sheetHead"><b id="sheetTitle"></b><button id="sheetClose" class="round small">✕</button></div>
+    <div id="sheetContent"></div>
+  </div>
+</div>
+
+<div id="confirm" class="modal" hidden>
+  <div class="modalBody">
+    <p id="confirmText"></p>
+    <div class="btnrow">
+      <button id="confirmNo">Cancel</button>
+      <button id="confirmYes" class="primary danger">OK</button>
+    </div>
+  </div>
+</div>
+
+<div id="lock" class="lock" hidden>
+  <div class="lockBody">
+    <div class="lockIcon">🔒</div>
+    <h2 id="lockTitle">Enter PIN</h2>
+    <div id="dots" class="dots"><i></i><i></i><i></i><i></i></div>
+    <div id="lockMsg" class="lockMsg"></div>
+    <div id="keypad" class="keypad"></div>
+    <button id="lockCancel" class="linkbtn" hidden>Cancel</button>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script src="face_mesh.js" defer></script>
+<script src="app.js" defer></script>
+</body>
+</html>
