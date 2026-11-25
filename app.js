@@ -102,6 +102,9 @@ const FILTERS = [
     B(g.eyeL, 0.5 * g.W, 0.82), B(g.eyeR, 0.5 * g.W, 0.82), B(g.mouth, 0.4 * g.W, -0.5)] },
   { id: 'bigmouth', name: 'Big Mouth', emoji: '👄', face: true, ops: g => [
     S(g.mouth, 0.62 * g.W, 0.5 * g.W, 0.7, 0.85, g.roll), B(g.eyeL, 0.3 * g.W, -0.45), B(g.eyeR, 0.3 * g.W, -0.45)] },
+  { id: 'widemouth', name: 'Big Eyes Wide Mouth', emoji: '😁', face: true, ops: g => [
+    B(g.eyeL, 0.38 * g.W, 0.68), B(g.eyeR, 0.38 * g.W, 0.68),
+    S(g.mouth, 0.85 * g.W, 0.5 * g.W, 0.72, 0.5, g.roll)] },
   { id: 'bignose', name: 'Big Nose', emoji: '👃', face: true, ops: g => [B(g.nose, 0.4 * g.W, 0.85)] },
   { id: 'forehead', name: 'Big Brain', emoji: '🧠', face: true, ops: g => [
     B(lerp2(g.eyeMid, g.fore, 0.7), 0.75 * g.W, 0.7), B(g.chin, 0.5 * g.W, -0.5)] },
@@ -687,9 +690,17 @@ async function renderLibrary() {
 
 /* ---------------------------------------------------------------- viewer / voice editor */
 const V = { item: null, final: null, raw: null, url: null, ctx: null, tap: null, chain: null, sel: 'original', busy: false, fresh: false };
+function freshVideoElement() {
+  const old = $('#vVideo');
+  try { old.pause(); } catch (e) {}
+  const nv = old.cloneNode(false);
+  nv.removeAttribute('src');
+  old.replaceWith(nv);
+}
 async function openViewer(id, opts = {}) {
   const item = await DB.getItem(id);
   if (!item) return;
+  freshVideoElement();
   V.item = item; V.fresh = !!opts.fresh; V.busy = false;
   V.final = await DB.getMedia(id + ':blob');
   V.raw = item.hasRaw ? await DB.getMedia(id + ':raw') : null;
@@ -779,6 +790,7 @@ function cleanupViewer() {
   const vid = $('#vVideo');
   try { vid.pause(); } catch (e) {}
   vid.removeAttribute('src'); vid.load();
+  freshVideoElement();
   if (V.chain) { V.chain.stop(); V.chain = null; }
   if (V.ctx) { V.ctx.close().catch(() => {}); V.ctx = null; V.tap = null; }
   if (V.url) { URL.revokeObjectURL(V.url); V.url = null; }
