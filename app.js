@@ -19,7 +19,7 @@ const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 
 const fmtTime = ms => { const s = Math.round(ms / 1000); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); };
 
 /* ---------------------------------------------------------------- settings */
-const DEFAULTS = { autoSave: true, micId: 'auto', cleanup: false, facing: 'user', filter: 'none', voice: 'original', mode: 'photo' };
+const DEFAULTS = { quality: 'high', fit: true, autoSave: true, micId: 'auto', cleanup: false, facing: 'user', filter: 'none', voice: 'original', mode: 'photo' };
 let settings = Object.assign({}, DEFAULTS);
 try { Object.assign(settings, JSON.parse(localStorage.getItem('fc_settings') || '{}')); } catch (e) {}
 const saveSettings = () => { try { localStorage.setItem('fc_settings', JSON.stringify(settings)); } catch (e) {} };
@@ -394,8 +394,10 @@ async function startCamera() {
   camReady = false;
   $('#loading').hidden = false; $('#btnRetry').hidden = true;
   $('#loadingText').textContent = 'Starting camera…';
+  const hi = settings.quality === 'high';
   const attempts = [
-    { facingMode: { ideal: settings.facing }, width: { ideal: 720 }, height: { ideal: 1280 }, frameRate: { ideal: 30 } },
+    { facingMode: { ideal: settings.facing }, width: { ideal: hi ? 1080 : 720 }, height: { ideal: hi ? 1440 : 960 }, aspectRatio: { ideal: 3 / 4 }, frameRate: { ideal: 30 } },
+    { facingMode: { ideal: settings.facing }, width: { ideal: 720 }, height: { ideal: 960 }, aspectRatio: { ideal: 3 / 4 } },
     { facingMode: { ideal: settings.facing } },
     true,
   ];
@@ -464,6 +466,10 @@ setInterval(() => {
   hint.hidden = !lost;
 }, 400);
 
+function applyFit() {
+  $('#out').style.objectFit = settings.fit ? 'contain' : 'cover';
+  $('#btnFit').textContent = settings.fit ? '⤢' : '⤡';
+}
 function setMode(m) {
   settings.mode = m; saveSettings();
   document.querySelectorAll('#modeRow button').forEach(b => b.classList.toggle('on', b.dataset.mode === m));
@@ -507,6 +513,7 @@ const pickMime = () => {
   const list = ['video/mp4;codecs=avc1.42E01E,mp4a.40.2', 'video/mp4;codecs=avc1', 'video/mp4', 'video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm'];
   return list.find(m => window.MediaRecorder && MediaRecorder.isTypeSupported(m)) || '';
 };
+const videoBps = () => (settings.quality === 'high' ? 14_000_000 : 6_000_000);
 const baseType = t => (t || '').split(';')[0];
 const extFor = type => ({ 'image/jpeg': 'jpg', 'video/mp4': 'mp4', 'video/webm': 'webm' }[baseType(type)] || 'bin');
 function fileName(item, blob) {
@@ -532,7 +539,7 @@ async function takePhoto() {
   $('#flash').classList.remove('go'); void $('#flash').offsetWidth; $('#flash').classList.add('go');
   needUpload = true;
   render();
-  const blob = await new Promise(r => canvas.toBlob(r, 'image/jpeg', 0.92));
+  const blob = await new Promise(r => canvas.toBlob(r, 'image/jpeg', 0.96));
   const thumb = await makeThumb(canvas, canvas.width, canvas.height);
   const item = { id: uid(), type: 'photo', created: Date.now(), mime: 'image/jpeg', thumb, filter: settings.filter, voice: null, hasRaw: false };
   await DB.putItem(item);
@@ -554,7 +561,7 @@ async function startRecording() {
     catch (e) { toast('No microphone access — recording without sound'); }
   }
   try {
-    rec = new MediaRecorder(new MediaStream(tracks), { mimeType: recMime || undefined, videoBitsPerSecond: 5_000_000, audioBitsPerSecond: 128000 });
+    rec = new MediaRecorder(new MediaStream(tracks), { mimeType: recMime || undefined, videoBitsPerSecond: videoBps(), audioBitsPerSecond: 192000 });
   } catch (e) { toast('Could not start recording: ' + e.name); releaseMic(); return; }
   chunks = [];
   rec.ondataavailable = e => { if (e.data && e.data.size) chunks.push(e.data); };
@@ -795,7 +802,7 @@ async function renderWithVoice(voiceId) {
   chain.out.connect(dest);
   const vt = vid.captureStream().getVideoTracks();
   const mime = pickMime();
-  const mr = new MediaRecorder(new MediaStream([...vt, ...dest.stream.getAudioTracks()]), { mimeType: mime || undefined, videoBitsPerSecond: 5_000_000, audioBitsPerSecond: 128000 });
+  const mr = new MediaRecorder(new MediaStream([...vt, ...dest.stream.getAudioTracks()]), { mimeType: mime || undefined, videoBitsPerSecond: videoBps(), audioBitsPerSecond: 192000 });
   const parts = [];
   mr.ondataavailable = e => { if (e.data && e.data.size) parts.push(e.data); };
   const stopped = new Promise(r => { mr.onstop = r; });
@@ -828,6 +835,7 @@ async function shareCurrent() {
 async function renderSettings() {
   $('#setAutoSave').checked = settings.autoSave;
   $('#setCleanup').checked = settings.cleanup;
+  $('#setQuality').value = settings.quality;
   $('#pinState').textContent = Lock.has ? 'A PIN is required when you open the app.' : 'Off — anyone who opens the app can see your stuff.';
   $('#pinSet').textContent = Lock.has ? 'Change PIN' : 'Set PIN';
   $('#pinRemove').hidden = !Lock.has;
@@ -935,6 +943,8 @@ function wire() {
   buildFilterRow();
   setMode(settings.mode);
   setVoice(settings.voice);
+  applyFit();
+  $('#btnFit').onclick = () => { settings.fit = !settings.fit; saveSettings(); applyFit(); toast(settings.fit ? 'Showing the whole camera view' : 'Filling the screen (zoomed in)'); };
   document.querySelectorAll('#modeRow button').forEach(b => b.onclick = () => { if (!recording) setMode(b.dataset.mode); });
   $('#btnShutter').onclick = () => {
     if (settings.mode === 'photo') takePhoto();
@@ -971,6 +981,7 @@ function wire() {
 
   $('#setAutoSave').onchange = e => { settings.autoSave = e.target.checked; saveSettings(); };
   $('#setCleanup').onchange = e => { settings.cleanup = e.target.checked; saveSettings(); };
+  $('#setQuality').onchange = async e => { settings.quality = e.target.value; saveSettings(); if (!recording) { await startCamera(); toast('Camera restarted at ' + (settings.quality === 'high' ? 'high' : 'standard') + ' quality'); } };
   $('#setMic').onchange = e => { settings.micId = e.target.value; saveSettings(); };
   $('#pinSet').onclick = async () => {
     if (Lock.has && !(await Lock.check(await askPin('Enter current PIN', true) || ''))) { toast('That PIN is not right'); return; }

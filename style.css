@@ -131,3 +131,6 @@ button:disabled{opacity:.4}
 .keypad button{width:76px;height:76px;border-radius:50%;padding:0;font-size:26px;background:var(--panel2)}
 .keypad button.ghost{background:none}
 .linkbtn{background:none;color:var(--muted)}
+
+.grp{display:flex;gap:8px}
+#stage{background:#000}

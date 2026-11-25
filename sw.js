@@ -1,5 +1,5 @@
 /* Offline cache so the app opens instantly and works with no signal. Bump VERSION when you update files. */
-const VERSION = 'funcam-v1';
+const VERSION = 'funcam-v3';
 const FILES = [
   './', 'index.html', 'style.css', 'app.js', 'pitch-worklet.js', 'manifest.webmanifest',
   'icon-192.png', 'icon-512.png',
