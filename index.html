@@ -88,7 +88,12 @@
   <div class="settingsBody">
     <div class="row col">
       <span><b>Camera quality</b><small>High uses your camera's full detail and a high video bitrate, like WhatsApp's "best quality". Choose Standard if the preview feels slow or videos get too big.</small></span>
-      <select id="setQuality"><option value="high">High (up to 1080p, recommended)</option><option value="standard">Standard (720p, smaller files)</option></select>
+      <select id="setQuality"><option value="high">High (up to 1080p, slower)</option><option value="standard">Standard (720p, faster, recommended)</option></select>
+    </div>
+
+    <div class="row col">
+      <span><b>Camera view</b><small id="camInfo"></small></span>
+      <input type="range" id="setZoom" hidden>
     </div>
 
     <label class="row">

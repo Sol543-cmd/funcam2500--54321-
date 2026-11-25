@@ -19,10 +19,10 @@ const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 
 const fmtTime = ms => { const s = Math.round(ms / 1000); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); };
 
 /* ---------------------------------------------------------------- settings */
-const DEFAULTS = { quality: 'high', fit: true, autoSave: true, micId: 'auto', cleanup: false, facing: 'user', filter: 'none', voice: 'original', mode: 'photo' };
+const DEFAULTS = { quality: 'standard', fit: true, autoSave: true, micId: 'auto', cleanup: false, facing: 'user', filter: 'none', voice: 'original', mode: 'photo' };
 let settings = Object.assign({}, DEFAULTS);
-try { Object.assign(settings, JSON.parse(localStorage.getItem('fc_settings') || '{}')); } catch (e) {}
-const saveSettings = () => { try { localStorage.setItem('fc_settings', JSON.stringify(settings)); } catch (e) {} };
+try { Object.assign(settings, JSON.parse(localStorage.getItem('fc_settings2') || '{}')); } catch (e) {}
+const saveSettings = () => { try { localStorage.setItem('fc_settings2', JSON.stringify(settings)); } catch (e) {} };
 
 let toastTimer;
 function toast(msg, ms = 2600) {
@@ -328,11 +328,19 @@ async function initFace() {
   faceReady = true;
   updateHint();
 }
+const det = document.createElement('canvas');
+const detCtx = det.getContext('2d');
+function overlayOpen() { return !$('#viewer').hidden || !$('#lib').hidden || !$('#settings').hidden; }
 async function detectLoop() {
   for (;;) {
     const f = filterById(settings.filter);
-    if (!(faceMesh && faceReady && camReady && cam.readyState >= 2 && !document.hidden && f.face)) { await sleep(120); continue; }
-    try { await faceMesh.send({ image: cam }); } catch (e) { console.warn('face', e); await sleep(250); }
+    if (!(faceMesh && faceReady && camReady && cam.readyState >= 2 && !document.hidden && f.face) || overlayOpen()) { await sleep(120); continue; }
+    try {
+      const dw = 384, dh = Math.max(2, Math.round(dw * cam.videoHeight / cam.videoWidth));
+      if (det.width !== dw || det.height !== dh) { det.width = dw; det.height = dh; }
+      detCtx.drawImage(cam, 0, 0, dw, dh);
+      await faceMesh.send({ image: det });
+    } catch (e) { console.warn('face', e); await sleep(250); }
     await nextFrame();
   }
 }
@@ -386,7 +394,7 @@ function render(now = performance.now()) {
 }
 const hasRVFC = 'requestVideoFrameCallback' in HTMLVideoElement.prototype;
 function rvfcLoop() { needUpload = true; cam.requestVideoFrameCallback(rvfcLoop); }
-function frameLoop(now) { requestAnimationFrame(frameLoop); if (!document.hidden) render(now); }
+function frameLoop(now) { requestAnimationFrame(frameLoop); if (!document.hidden && !overlayOpen()) render(now); }
 
 /* ---------------------------------------------------------------- camera */
 async function startCamera() {
@@ -417,8 +425,23 @@ async function startCamera() {
   await new Promise(r => { if (cam.videoWidth) r(); else cam.onloadedmetadata = () => r(); });
   camReady = true;
   needUpload = true;
+  await zoomOutCamera();
   $('#loading').hidden = true;
   requestWake();
+}
+let camCaps = {};
+async function zoomOutCamera() {
+  camCaps = {};
+  try {
+    const tr = stream.getVideoTracks()[0];
+    camCaps = tr.getCapabilities ? tr.getCapabilities() : {};
+    if (camCaps.zoom && camCaps.zoom.min !== undefined) await tr.applyConstraints({ advanced: [{ zoom: camCaps.zoom.min }] });
+  } catch (e) { console.warn('zoom', e); }
+}
+function camInfoText() {
+  if (!stream) return 'Camera not running.';
+  const tr = stream.getVideoTracks()[0], st = tr ? tr.getSettings() : {};
+  return `The camera is giving the app ${cam.videoWidth}×${cam.videoHeight}` + (st.zoom ? ` at ${(+st.zoom).toFixed(1)}× zoom.` : '. This phone doesn’t offer a camera zoom control.');
 }
 function stopCamera() {
   camReady = false;
@@ -513,7 +536,7 @@ const pickMime = () => {
   const list = ['video/mp4;codecs=avc1.42E01E,mp4a.40.2', 'video/mp4;codecs=avc1', 'video/mp4', 'video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm'];
   return list.find(m => window.MediaRecorder && MediaRecorder.isTypeSupported(m)) || '';
 };
-const videoBps = () => (settings.quality === 'high' ? 14_000_000 : 6_000_000);
+const videoBps = () => (settings.quality === 'high' ? 14_000_000 : 8_000_000);
 const baseType = t => (t || '').split(';')[0];
 const extFor = type => ({ 'image/jpeg': 'jpg', 'video/mp4': 'mp4', 'video/webm': 'webm' }[baseType(type)] || 'bin');
 function fileName(item, blob) {
@@ -693,32 +716,46 @@ function buildChips() {
   box.replaceChildren();
   for (const v of VOICES) {
     const c = h('button', { class: 'vchip' + (v.id === V.sel ? ' on' : '') + (v.id === V.item.voice ? ' applied' : ''), 'data-id': v.id }, document.createTextNode(v.emoji + ' ' + v.name));
-    c.onclick = () => { if (V.busy) return; V.sel = v.id; buildChips(); connectVoice(); updateViewerButtons(); };
+    c.onclick = async () => {
+      if (V.busy) return;
+      V.sel = v.id; buildChips();
+      if (v.id !== 'original' && !V.ctx && !(await ensureAudio())) toast('Could not start the voice engine — tap the voice again');
+      connectVoice(); updateViewerButtons();
+    };
     box.append(c);
   }
 }
+async function ensureAudio() {
+  if (V.ctx) return true;
+  let ctx;
+  try {
+    ctx = new (window.AudioContext || window.webkitAudioContext)();
+    try { await ctx.resume(); } catch (e) {}
+    if (ctx.state !== 'running') { ctx.close().catch(() => {}); return false; }
+    await ensureWorklet(ctx);
+    const msrc = ctx.createMediaElementSource($('#vVideo'));
+    V.tap = ctx.createGain();
+    msrc.connect(V.tap);
+    V.ctx = ctx;
+    return true;
+  } catch (e) { console.warn('audio engine', e); return false; }
+}
 async function attachVideo() {
   const vid = $('#vVideo');
-  const src = V.raw || V.final;
-  V.url = URL.createObjectURL(src);
-  vid.loop = true; vid.controls = true;
+  V.url = URL.createObjectURL(V.raw || V.final);
+  vid.loop = true; vid.controls = true; vid.muted = false;
+  vid.onerror = () => { $('#vNote').textContent = 'This phone could not play this video inside the app. You can still Save or Share it.'; };
   vid.src = V.url;
-  await new Promise(r => { vid.onloadedmetadata = r; vid.onerror = r; });
+  await Promise.race([new Promise(r => { vid.onloadedmetadata = r; }), sleep(4000)]);
   if (vid.duration === Infinity) { // MediaRecorder files often lack a duration
     vid.currentTime = 1e101;
     await new Promise(r => { vid.ontimeupdate = () => { vid.ontimeupdate = null; r(); }; setTimeout(r, 1500); });
     vid.currentTime = 0;
   }
-  try {
-    V.ctx = new (window.AudioContext || window.webkitAudioContext)();
-    await ensureWorklet(V.ctx);
-    const msrc = V.ctx.createMediaElementSource(vid);
-    V.tap = V.ctx.createGain();
-    msrc.connect(V.tap);
-    connectVoice();
-    V.ctx.resume().catch(() => {});
-  } catch (e) { console.warn('audio graph', e); V.ctx = null; toast('Voice effects are not available here'); }
   vid.play().catch(() => {});
+  if (V.sel !== 'original') {
+    if (await ensureAudio()) connectVoice(); else $('#vNote').textContent = 'Tap a voice below to hear it.';
+  }
 }
 function connectVoice() {
   if (!V.ctx) return;
@@ -743,7 +780,7 @@ function cleanupViewer() {
   try { vid.pause(); } catch (e) {}
   vid.removeAttribute('src'); vid.load();
   if (V.chain) { V.chain.stop(); V.chain = null; }
-  if (V.ctx) { V.ctx.close().catch(() => {}); V.ctx = null; }
+  if (V.ctx) { V.ctx.close().catch(() => {}); V.ctx = null; V.tap = null; }
   if (V.url) { URL.revokeObjectURL(V.url); V.url = null; }
   $('#vImg').removeAttribute('src');
   if (!$('#lib').hidden) renderLibrary();
@@ -751,7 +788,8 @@ function cleanupViewer() {
 }
 
 async function applyVoice() {
-  if (V.busy || !V.ctx && V.sel !== 'original') return;
+  if (V.busy) return;
+  if (V.sel !== 'original' && !V.ctx && !(await ensureAudio())) { toast('Could not start the voice engine — tap Apply again'); return; }
   const item = V.item, sel = V.sel;
   const source = V.raw || V.final;
   V.busy = true;
@@ -836,6 +874,10 @@ async function renderSettings() {
   $('#setAutoSave').checked = settings.autoSave;
   $('#setCleanup').checked = settings.cleanup;
   $('#setQuality').value = settings.quality;
+  $('#camInfo').textContent = camInfoText();
+  const z = camCaps.zoom, zs = $('#setZoom');
+  zs.hidden = !(z && z.max > z.min);
+  if (!zs.hidden) { zs.min = z.min; zs.max = z.max; zs.step = z.step || 0.1; zs.value = (stream.getVideoTracks()[0].getSettings().zoom) || z.min; }
   $('#pinState').textContent = Lock.has ? 'A PIN is required when you open the app.' : 'Off — anyone who opens the app can see your stuff.';
   $('#pinSet').textContent = Lock.has ? 'Change PIN' : 'Set PIN';
   $('#pinRemove').hidden = !Lock.has;
@@ -982,6 +1024,7 @@ function wire() {
   $('#setAutoSave').onchange = e => { settings.autoSave = e.target.checked; saveSettings(); };
   $('#setCleanup').onchange = e => { settings.cleanup = e.target.checked; saveSettings(); };
   $('#setQuality').onchange = async e => { settings.quality = e.target.value; saveSettings(); if (!recording) { await startCamera(); toast('Camera restarted at ' + (settings.quality === 'high' ? 'high' : 'standard') + ' quality'); } };
+  $('#setZoom').oninput = async e => { try { await stream.getVideoTracks()[0].applyConstraints({ advanced: [{ zoom: +e.target.value }] }); $('#camInfo').textContent = camInfoText(); } catch (err) {} };
   $('#setMic').onchange = e => { settings.micId = e.target.value; saveSettings(); };
   $('#pinSet').onclick = async () => {
     if (Lock.has && !(await Lock.check(await askPin('Enter current PIN', true) || ''))) { toast('That PIN is not right'); return; }

@@ -134,3 +134,5 @@ button:disabled{opacity:.4}
 
 .grp{display:flex;gap:8px}
 #stage{background:#000}
+
+.row input[type=range]{width:100%;accent-color:var(--accent)}
